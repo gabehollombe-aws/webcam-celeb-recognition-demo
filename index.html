@@ -1,0 +1,113 @@
+<html>
+
+<head>
+    <title>Rekognition Object Detection Demo</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script type="text/javascript" src="js/jquery-3.1.1.min.js"></script>
+    <script type="text/javascript" src="js/aws-sdk.min.js"></script>
+    <script type="text/javascript" src="js/jpeg_camera/jpeg_camera_with_dependencies.min.js"></script>
+    <link href="css/styles.css" rel="stylesheet" type="text/css">
+</head>
+
+<body>
+    <h1>Rekognition Celeb Detection via Webcam</h1>
+    <div id="camera" style="width: 320px; height: 180px; display: block;">
+        <div class="placeholder">
+            Your browser does not support camera access.
+            <br> We recommend
+            <a href="https://www.google.com/chrome/" target="_blank">Chrome</a>
+            &mdash; modern, secure, fast browser from Google.
+            <br> It's free.
+        </div>
+    </div>
+
+    <h2>Celebrities Seen</h2>
+    <ul id="celebs">
+    </ul>
+</body>
+</html>
+
+<script>
+    // Put your Cognito Identity Pool region and ID here 
+    // and make sure the anonymous IAM role for the pool has (at least) rekognition read-only privs
+    AWS.config.region = 'us-east-1';
+    AWS.config.credentials = new AWS.CognitoIdentityCredentials({
+        IdentityPoolId: 'us-east-1:AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE'
+    });
+
+    var rekognition = new AWS.Rekognition();
+    var camera = null; // Will be initialized after page load
+
+    function getAndListCelebs() {
+        var snapshot = camera.capture();
+        snapshot.get_blob(handleBlob);
+    }
+
+    function handleBlob(blob) {
+        var reader = new FileReader();
+        var onReaderLoad = function () {
+            recognizeCelebs(getBinary(reader.result));
+        }
+        reader.addEventListener("load", onReaderLoad, false);
+        reader.readAsDataURL(blob);
+    }
+
+    function getBinary(encodedFile) {
+        var base64Image = encodedFile.split("data:image/jpeg;base64,")[1];
+        var binaryImg = atob(base64Image);
+        var length = binaryImg.length;
+        var ab = new ArrayBuffer(length);
+        var ua = new Uint8Array(ab);
+        for (var i = 0; i < length; i++) {
+            ua[i] = binaryImg.charCodeAt(i);
+        }
+
+        var blob = new Blob([ab], {
+            type: "image/jpeg"
+        });
+
+        return ab;
+    }
+
+    function recognizeCelebs(base64ImageBytes) {
+        var params = {
+            Image: {
+                Bytes: base64ImageBytes
+            }
+        };
+        rekognition.recognizeCelebrities(params, function (err, data) {
+            if (err) console.log(err, err.stack);
+            else {
+                $.each(data.CelebrityFaces, function (index, value) {
+                    if (value.MatchConfidence < 90) return;
+
+                    var celeb =
+                        `<li>
+                        <span class='rekLabel'>${value.Name}</span>
+                        <span class='rekScore'> ${value.MatchConfidence}%</span>
+                        <span class='rekTimestamp'>${new Date()}</span>
+                        </li>`;
+                    $("#celebs").append(celeb);
+                });
+                setTimeout(function () {
+                    getAndListCelebs();
+                }, 900);
+            }
+        });
+    }
+
+    $(document).ready(function () {
+        camera = new JpegCamera("#camera", {
+            shutter: false,
+            swf_url: "/js/jpeg_camera/jpeg_camera.swf",
+            shutter_mp3_url: "/js/jpeg_camera/shutter.mp3",
+            shutter_ogg_url: "/js/jpeg_camera/shutter.ogg",
+            on_ready: function() {
+                this.show_stream();
+                getAndListCelebs();
+            }
+        });
+
+    });
+</script>
